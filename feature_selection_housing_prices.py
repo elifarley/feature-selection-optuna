@@ -12,21 +12,22 @@ logging.basicConfig(
     format="[%(asctime)s] %(levelname)s: %(message)s",
     datefmt="%d-%b-%y %H:%M:%S",
 )
+logger = logging.getLogger("feature_selection_example")
 
 df = fetch_california_housing(as_frame=True).frame
 
-print("\nBasic info on the dataset:")
-print(df.info())
-print("\nFirst 5 rows of the dataset:")
-print(df.head())
+logger.info("\nBasic info on the dataset:")
+df.info()
+logger.info("\nFirst 5 rows of the dataset:")
+logger.info(df.head())
 
 # Display the columns
-print("\nColumn names:")
-print(df.columns.to_list())
+logger.info("\nColumn names:")
+logger.info(df.columns.to_list())
 
 # Show basic stats on the 'passengers' column
-print("\nBasic statistics on the 'MedHouseVal' column:")
-print(df.MedHouseVal.describe())
+logger.info("\nBasic statistics on the 'MedHouseVal' column:")
+logger.info(df.MedHouseVal.describe())
 
 feature_removal_cv(
     model_params={

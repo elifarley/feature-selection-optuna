@@ -69,7 +69,7 @@ def compute_loss(
     X: pd.DataFrame,
     y: pd.Series,
     splits: list[tuple],
-    selected_feature_names: list[str] | None = None,
+    selected_feature_names: list[str] = [],
     loss_fn: Callable[[pd.Series, pd.Series], float] = root_mean_squared_error,
 ) -> float:
     """Compute the loss for a given model configuration and dataset.
@@ -110,7 +110,9 @@ def compute_loss(
         y_valid_split = y.iloc[valid_idx]
 
         train_data = lgb.Dataset(X_train_split, label=y_train_split)
-        valid_data = lgb.Dataset(X_valid_split, label=y_valid_split, reference=train_data)
+        valid_data = lgb.Dataset(
+            X_valid_split, label=y_valid_split, reference=train_data
+        )
         with warnings.catch_warnings():  # Python 3.11: (action="ignore"):
             warnings.simplefilter("ignore")
             gbm = lgb.train(

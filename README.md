@@ -1,53 +1,130 @@
 ## Introduction
 
-Feature selection is a critical step in machine learning to enhance model performance and reduce overfitting. However, evaluating every possible combination of features can be computationally expensive. This example introduces an efficient approach to feature selection using Optuna, which significantly reduces the search space and computation time.
+Feature selection is a critical step in machine learning to enhance model performance and reduce overfitting. However, evaluating every possible combination of features can be computationally expensive.
 
-## Example
+This example introduces an efficient approach to feature selection using Optuna, which significantly reduces the search space and computation time.
 
-Example feature removal report from the fetch_california_housing dataset, using LightGBM as the model:
+## Details
+
+In this project, you can see how to use Optuna for feature selection.
+
+The class `OptunaFeatureSelectionObjective` conducts a study where each trial
+attempts a different subset of features from the input dataset.
+
+Key highlights:
+
+### Pruning Strategy
+
+Trials are pruned using optuna.exceptions.TrialPruned in three scenarios:
+
+1. The number of features exceeds a user-defined maximum.
+2. No features are selected for the trial.
+3. The feature set has been previously evaluated in another trial.
+
+### ETA Prediction
+
+After each successful trial, an estimated time of arrival (ETA) is printed, providing users with a prediction of when the study is likely to complete. This feature is particularly useful for long-running studies, allowing users to manage their time efficiently.
+
+### Benefits
+
+Efficiency: By pruning trials that exceed the feature limit, have no selected features, or repeat previous trials, we save significant computation time.
+
+User Experience: The ETA prediction enhances the user experience by setting expectations for study completion, enabling better planning and time management.
+
+### Example Usage
+
+```Python
+from feature_selection import feature_removal_cv
+
+feature_removal_cv(
+    model_params={
+        "objective": "regression",
+        "metric": "rmse",
+        "data_random_seed": 42,
+        "num_boost_round": 1000,
+        "early_stopping_rounds": 10,
+        "learning_rate": 0.12599281729053988,
+        "force_row_wise": True,
+        "verbose": -1,
+        "verbose_eval": False,
+        "num_leaves": 631,
+        "max_depth": 7,
+        "min_child_samples": 65,
+        "colsample_bytree": 0.8430078242019065,
+        "reg_alpha": 0.06636017620531826,
+        "reg_lambda": 0.057077523364489346,
+    },
+    X=df.drop(columns=["MedHouseVal"]),
+    y=df.MedHouseVal,
+    split_count=5,
+    trial_count=800,
+)
+
+```
+
+### Example Report
+
+Example feature removal report from the `fetch_california_housing` dataset,
+using *LightGBM* as the model:
 
 ```
 Target     : MedHouseVal; Rows: 20640
-Time       : 3 minutes and 54.60 seconds
+Time       : 4 minutes and 9.54 seconds
 Max removal: 5
-Trials     : 800
-  Repeated : 85.4%
-  Valid    : 12.75% (102)
-  Mean time: 2.30 seconds
+Trials     : 1000
+  Repeated : 87.1%
+  Valid    : 11.10% (111)
+  Mean time: 2.25 seconds
 Improvement:
   Best: #0012 (valid #12 (92.31%)):   0.5640% (0.4470) [02 removed]
   Last: #0012 (valid #12 (92.31%)):   0.5640% (0.4470) [02 removed]
 
+---
 Removal count ranking (showing best entry for each removal count)
-  Best is always at 'loss rank' 1
-```
+  - Best is always at 'improvement-rank'=1
 
-```csv
-removed count, loss rank, element count, loss %, loss, removed
-05, 06, 013, -4.66230,   0.47045773007001, ('HouseAge', 'AveRooms', 'AveBedrms', 'Population', 'AveOccup')
-04, 05, 027, -4.21248,   0.46843579420832, ('HouseAge', 'AveBedrms', 'Population', 'AveOccup')
-03, 04, 031, -1.03054,   0.45413293903588, ('HouseAge', 'AveBedrms', 'Population')
-02, 01, 022,  0.56401,   0.44696545144867, ('AveBedrms', 'Population')
-01, 02, 008,  0.16590,   0.44875497579740, ('Population',)
-00, 03, 001,  0.00000,   0.44950067535113, ()
-```
+removed-count, improvement-rank, element-count, relative-improvement-%, loss, removed
+05, 06, 016, -04.66230,   0.47045773007001, ('HouseAge', 'AveRooms', 'AveBedrms', 'Population', 'AveOccup')
+04, 05, 030, -04.21248,   0.46843579420832, ('HouseAge', 'AveBedrms', 'Population', 'AveOccup')
+03, 04, 032, -01.03054,   0.45413293903588, ('HouseAge', 'AveBedrms', 'Population')
+02, 01, 024,  00.56401,   0.44696545144867, ('AveBedrms', 'Population')
+01, 02, 008,  00.16590,   0.44875497579740, ('Population',)
+00, 03, 001,  00.00000,   0.44950067535113, ()
 
-```csv
-loss %, loss, removed count, removed
- 0.56401,   0.44696545144867, 2, ('AveBedrms', 'Population')
- 0.16590,   0.44875497579740, 1, ('Population',)
- 0.10078,   0.44904767131884, 1, ('AveBedrms',)
- 0.00000,   0.44950067535113, 0, ()
--1.03054,   0.45413293903588, 3, ('HouseAge', 'AveBedrms', 'Population')
--2.08879,   0.45888982179241, 2, ('HouseAge', 'AveBedrms')
--2.19110,   0.45934969857630, 2, ('MedInc', 'Population')
--2.39523,   0.46026727013703, 3, ('AveRooms', 'AveBedrms', 'Population')
--2.42233,   0.46038904516264, 2, ('HouseAge', 'Population')
--2.53074,   0.46087636019696, 1, ('AveRooms',)
--2.60086,   0.46119154480805, 2, ('AveRooms', 'Population')
--2.67508,   0.46152517577751, 1, ('HouseAge',)
--3.12164,   0.46353248336082, 2, ('AveRooms', 'AveBedrms')
--3.78445,   0.46651178215665, 1, ('MedInc',)
+
+---
+Relative improvement percent (RI%) ranking for single removals, from best to worst:
+  - Relative to the baseline (no features removed)
+
+RI%, loss, removed-count, removed
+ 00.16590,   0.44875497579740, ('Population',)
+ 00.10078,   0.44904767131884, ('AveBedrms',)
+-02.53074,   0.46087636019696, ('AveRooms',)
+-02.67508,   0.46152517577751, ('HouseAge',)
+-03.78445,   0.46651178215665, ('MedInc',)
+-04.78708,   0.47101864931400, ('AveOccup',)
+-25.20672,   0.56280506141426, ('Latitude',)
+-26.80935,   0.57000889293308, ('Longitude',)
+
+
+---
+Relative improvement percent (RI%) ranking, from best to worst:
+  - Relative to the baseline (no features removed)
+\RI%, loss, removed-count, removed
+ 00.56401,   0.44696545144867, 02, ('AveBedrms', 'Population')
+ 00.16590,   0.44875497579740, 01, ('Population',)
+ 00.10078,   0.44904767131884, 01, ('AveBedrms',)
+ 00.00000,   0.44950067535113, 00, ()
+-01.03054,   0.45413293903588, 03, ('HouseAge', 'AveBedrms', 'Population')
+-02.08879,   0.45888982179241, 02, ('HouseAge', 'AveBedrms')
+-02.19110,   0.45934969857630, 02, ('MedInc', 'Population')
+-02.39523,   0.46026727013703, 03, ('AveRooms', 'AveBedrms', 'Population')
+-02.42233,   0.46038904516264, 02, ('HouseAge', 'Population')
+-02.53074,   0.46087636019696, 01, ('AveRooms',)
+-02.60086,   0.46119154480805, 02, ('AveRooms', 'Population')
+-02.67508,   0.46152517577751, 01, ('HouseAge',)
+-03.12164,   0.46353248336082, 02, ('AveRooms', 'AveBedrms')
+-03.78445,   0.46651178215665, 01, ('MedInc',)
 ```
 
 <details>
@@ -57,6 +134,9 @@ More rows...
 You can see that the *single-column removal* that caused the worst loss (`0.57`) was `Longitude`:
 
 ```
+-25.20672,   0.56280506141426, 1, ('Latitude',)
+-25.70993,   0.56506699440362, 2, ('Population', 'Latitude')
+-26.65316,   0.56930679300722, 5, ('MedInc', 'HouseAge', 'AveRooms', 'AveBedrms', 'Population')
 -26.80935,   0.57000889293308, 1, ('Longitude',)
 ```
 
@@ -112,18 +192,24 @@ You can see that the *single-column removal* that caused the worst loss (`0.57`)
 -29.95871,   0.58416527803826, 3, ('AveRooms', 'AveBedrms', 'Longitude')
 -30.78791,   0.58789252613351, 2, ('MedInc', 'AveRooms')
 -32.07312,   0.59366956094864, 4, ('MedInc', 'HouseAge', 'AveRooms', 'Population')
+-32.66674,   0.59633788722049, 4, ('HouseAge', 'AveBedrms', 'Population', 'Latitude')
 -32.75321,   0.59672656085596, 5, ('MedInc', 'HouseAge', 'AveRooms', 'AveBedrms', 'AveOccup')
 -32.86823,   0.59724360912042, 4, ('MedInc', 'HouseAge', 'AveRooms', 'AveBedrms')
 -33.73193,   0.60112592645904, 3, ('MedInc', 'HouseAge', 'AveRooms')
 -33.74887,   0.60120205882995, 4, ('MedInc', 'AveRooms', 'AveBedrms', 'AveOccup')
 -34.97764,   0.60672539730386, 4, ('HouseAge', 'AveRooms', 'Population', 'Latitude')
+-35.41009,   0.60866927817798, 4, ('HouseAge', 'AveBedrms', 'Population', 'Longitude')
 -35.66525,   0.60981622219018, 5, ('HouseAge', 'AveRooms', 'AveBedrms', 'Population', 'Latitude')
 -36.76957,   0.61478012261011, 4, ('MedInc', 'HouseAge', 'AveRooms', 'AveOccup')
 -36.80242,   0.61492780263808, 3, ('HouseAge', 'AveRooms', 'Longitude')
 -37.80189,   0.61942040462466, 4, ('HouseAge', 'AveRooms', 'AveBedrms', 'Longitude')
 -37.91647,   0.61993544414150, 4, ('HouseAge', 'AveRooms', 'Population', 'Longitude')
+-38.47016,   0.62242429219966, 5, ('HouseAge', 'AveRooms', 'AveBedrms', 'Population', 'Longitude')
+-39.59685,   0.62748878981688, 2, ('AveOccup', 'Latitude')
 -40.65759,   0.63225683442081, 2, ('Latitude', 'Longitude')
 -42.37149,   0.63996082283022, 3, ('Population', 'Latitude', 'Longitude')
+-43.18696,   0.64362636179336, 2, ('AveOccup', 'Longitude')
+-43.22096,   0.64377920005569, 3, ('AveBedrms', 'Latitude', 'Longitude')
 -43.80332,   0.64639691374347, 4, ('AveBedrms', 'Population', 'AveOccup', 'Latitude')
 -43.87200,   0.64670560924455, 3, ('AveBedrms', 'AveOccup', 'Latitude')
 -44.34598,   0.64883615376219, 3, ('Population', 'AveOccup', 'Longitude')
@@ -133,13 +219,16 @@ You can see that the *single-column removal* that caused the worst loss (`0.57`)
 -47.07703,   0.66111225482940, 4, ('HouseAge', 'Population', 'AveOccup', 'Latitude')
 -47.74738,   0.66412547514768, 4, ('AveBedrms', 'Population', 'AveOccup', 'Longitude')
 -49.16841,   0.67051300238039, 3, ('MedInc', 'Population', 'Latitude')
+-49.69176,   0.67286549232064, 4, ('AveRooms', 'Population', 'AveOccup', 'Longitude')
 -49.79569,   0.67333265521987, 4, ('AveRooms', 'AveBedrms', 'Latitude', 'Longitude')
+-50.02319,   0.67435526750837, 5, ('HouseAge', 'AveBedrms', 'Population', 'AveOccup', 'Latitude')
 -50.77163,   0.67771948267529, 3, ('HouseAge', 'AveOccup', 'Longitude')
 -50.84316,   0.67804101425540, 2, ('MedInc', 'Longitude')
 -51.96104,   0.68306592313965, 3, ('HouseAge', 'Latitude', 'Longitude')
 -52.67413,   0.68627126128431, 5, ('HouseAge', 'AveRooms', 'AveBedrms', 'AveOccup', 'Latitude')
 -52.83002,   0.68697195897298, 4, ('HouseAge', 'Population', 'AveOccup', 'Longitude')
 -52.83559,   0.68699699230203, 5, ('AveRooms', 'AveBedrms', 'Population', 'Latitude', 'Longitude')
+-54.87442,   0.69616156721228, 5, ('HouseAge', 'AveBedrms', 'Population', 'Latitude', 'Longitude')
 -55.11743,   0.69725388310838, 4, ('MedInc', 'HouseAge', 'Population', 'Latitude')
 -56.04720,   0.70143320037677, 4, ('MedInc', 'AveBedrms', 'Population', 'Latitude')
 -61.36219,   0.72532414110002, 5, ('HouseAge', 'AveRooms', 'Population', 'Latitude', 'Longitude')
@@ -152,4 +241,5 @@ You can see that the *single-column removal* that caused the worst loss (`0.57`)
 -101.97507,   0.90787931437800, 5, ('MedInc', 'HouseAge', 'Population', 'Latitude', 'Longitude')
 -116.35262,   0.97250648930469, 5, ('MedInc', 'Population', 'AveOccup', 'Latitude', 'Longitude')
 ```
+
 </details>

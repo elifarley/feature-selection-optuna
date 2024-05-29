@@ -12,6 +12,7 @@ import humanize
 import optuna
 from optuna.samplers import TPESampler
 import pandas as pd
+from pickle_blosc import pickle, unpickle
 from trainkit import compute_loss
 from trainkit import get_splits
 from trainkit import train_valid_splits_by_counts
@@ -40,7 +41,9 @@ def feature_removal(
         model_params,
         pd.concat([X_train, X_valid], axis=0),
         pd.concat([y_train, y_valid], axis=0),
-        split_count=train_valid_splits_by_counts(X_train.shape[0], X_valid.shape[0]),
+        split_count=train_valid_splits_by_counts(
+            X_train.shape[0], X_valid.shape[0]
+        ),
         data_dir=data_dir,
         trial_count=trial_count,
         max_removal_count=max_removal_count,
@@ -60,26 +63,40 @@ def feature_removal_cv(
     always_keep: set[str] = {},
     removal_suggestions: list[tuple[str]] = [],
 ):
-    featurelist_path = f"{data_dir}/optuna-{y.name}-features.txt"
+    loss_state_path = f"{data_dir}/feature-removal-{y.name}-state.blosc"
+
+    featurelist_path = f"{data_dir}/feature-removal-{y.name}-report.txt"
     if os.path.exists(featurelist_path):
-        logger.warning("Replacing feature removal report already saved to %s", featurelist_path)
+        logger.warning(
+            "Replacing feature removal report already saved to %s",
+            featurelist_path,
+        )
 
     logger.warning("[feature_removal] (%s) Data size: %d", y.name, y.shape[0])
 
-    study = optuna.create_study(direction="minimize", sampler=TPESampler(seed=42))
+    study = optuna.create_study(
+        direction="minimize", sampler=TPESampler(seed=42)
+    )
 
     # We first try the model using all features
     features = list(X.columns)
     study.enqueue_trial({ft: True for ft in features})
-    logger.info("[feature_removal] Original suggestions: %d", len(removal_suggestions))
+    logger.info(
+        "[feature_removal] Original suggestions: %d", len(removal_suggestions)
+    )
     removal_suggestions += [(ft,) for ft in features]
     removal_suggestions = list(dict.fromkeys(removal_suggestions))
-    logger.info("[feature_removal] Final suggestions: %d", len(removal_suggestions))
+    logger.info(
+        "[feature_removal] Final suggestions: %d", len(removal_suggestions)
+    )
     for removals in removal_suggestions:
         suggestion = {ft: ft not in removals for ft in features}
         suggested_count = sum(suggestion.values())
         if suggested_count == 0 or suggested_count == len(features):
-            logger.warning("[feature_removal] Suggestion count == %d; Skipped", suggested_count)
+            logger.warning(
+                "[feature_removal] Suggestion count == %d; Skipped",
+                suggested_count,
+            )
         else:
             logger.info(
                 "[feature_removal] Enqueue removal suggestion: %s",
@@ -91,30 +108,56 @@ def feature_removal_cv(
         model_params=model_params,
         X=X,
         y=y,
-        splits=(get_splits(X, split_count) if isinstance(split_count, int) else split_count),
+        splits=(
+            get_splits(X, split_count)
+            if isinstance(split_count, int)
+            else split_count
+        ),
         trial_count=trial_count,
         max_removal_count=max_removal_count,
         always_keep=always_keep,
     ) as objective:
-        study.optimize(
-            objective,
-            n_trials=trial_count,
+        if os.path.exists(loss_state_path):
+            objective.known_losses = unpickle(loss_state_path)
+            logger.info(
+                "[feature_removal] Loaded losses from %s", loss_state_path
+            )
+        else:
+            study.optimize(
+                objective,
+                n_trials=trial_count,
+            )
+            pickle(objective.known_losses, loss_state_path)
+
+        objective.removal_rank_by_removal_count.to_csv(
+            f"{data_dir}/feature-removal-{y.name}-by-removal-counts.csv"
+        )
+        objective.removal_rank.to_csv(
+            f"{data_dir}/feature-removal-{y.name}-by-relative-improvement.csv"
         )
 
         with open(featurelist_path, "w") as optuna_fp:
+            optuna_fp.write(objective.study_report())
+
+            df = objective.removal_rank
             optuna_fp.write(
-                objective.study_report()
-                + "\n\n---\nRelative loss percent ranking, from best to worst:"
+                "\n\n---\nRelative improvement percent (RI%) ranking for single removals, from best to worst:"
                 "\n  - Relative to the baseline (no features removed)"
-                "\n\nrelative-loss-%, loss, removed-count, removed\n"
+                "\n\nRI%, loss, removed-count, removed\n"
             )
-            for loss, removed_features in objective.removal_rank:
-                optuna_fp.write(
-                    f"{objective.loss_improvement_percent(loss): 07.5f}, "
-                    f"{loss:18.14f}, "
-                    f"{len(removed_features)}, "
-                    f"{removed_features}\n"
-                )
+            objective.write_relative_loss_ranking_rows(
+                df[df["rcount"] == 1].drop(columns=["rcount"]), optuna_fp
+            )
+
+            optuna_fp.write(
+                "\n\n---\nRelative improvement percent (RI%) ranking, from best to worst:"
+                "\n  - Relative to the baseline (no features removed)"
+                "\n\RI%, loss, removed-count, removed\n"
+            )
+            objective.write_relative_loss_ranking_rows(df, optuna_fp)
+        logger.warning(
+            "[feature_removal] Final report written to %s", featurelist_path
+        )
 
 
 TrialInfoBase = namedtuple(
@@ -200,7 +243,7 @@ class OptunaFeatureSelectionObjective:
         self.always_keep: set[str] = always_keep
         self.loss_fn = loss_fn
         self.features = list(X.columns)
-        self.known_losses: dict[str, float] = {}
+        self.known_losses: dict[tuple[str], float] = {}
         self.optuna_repeated_count: int = 0
         self.original_loss: float = 0
         self.duration = 0
@@ -223,7 +266,9 @@ class OptunaFeatureSelectionObjective:
             Returns the loss which Optuna uses to determine the best set of features.
 
         """
-        removed_features = self._early_stop(self._compute_removed_features(trial))
+        removed_features = self._early_stop(
+            self._compute_removed_features(trial)
+        )
 
         loss = self._compute_loss(removed_features)
 
@@ -240,7 +285,9 @@ class OptunaFeatureSelectionObjective:
 
     def __exit__(self, exc_type, exc_value, traceback):
         self._update_stats()
-        logger.info("[OptunaFeatureSelectionObjective] %s", self.study_report())
+        logger.info(
+            "[OptunaFeatureSelectionObjective] %s", self.study_report()
+        )
 
     def _early_stop(self, removed_features: T) -> T:
         if len(removed_features) > self.max_removal_count:
@@ -254,9 +301,9 @@ class OptunaFeatureSelectionObjective:
             logger.debug("### TrialPruned: No features left.")
             raise optuna.exceptions.TrialPruned()
 
-        if self.always_keep and len(set(removed_features) & self.always_keep) == len(
-            self.always_keep
-        ):
+        if self.always_keep and len(
+            set(removed_features) & self.always_keep
+        ) == len(self.always_keep):
             logger.debug("### TrialPruned: All required features were removed")
             raise optuna.exceptions.TrialPruned()
 
@@ -268,7 +315,9 @@ class OptunaFeatureSelectionObjective:
 
     def _compute_loss(self, removed_features: tuple[str]) -> float:
         selected_features = [
-            feature_name for feature_name in self.features if feature_name not in removed_features
+            feature_name
+            for feature_name in self.features
+            if feature_name not in removed_features
         ]
 
         loss = compute_loss(
@@ -284,8 +333,10 @@ class OptunaFeatureSelectionObjective:
             self.original_loss = loss
         return loss
 
-    def _handle_current_trial(self, trial, removed_features: tuple[str], loss: float) -> TrialInfo:
-        improvement_percent = self.loss_improvement_percent(loss)
+    def _handle_current_trial(
+        self, trial, removed_features: tuple[str], loss: float
+    ) -> TrialInfo:
+        improvement_percent = self.relative_improvement_percent(loss)
         current_trial = TrialInfo(
             trial.number,
             self.combination_count,
@@ -307,11 +358,15 @@ class OptunaFeatureSelectionObjective:
         if self.duration != 0:
             return
         self.duration = timer() - self.start_time
-        self.hduration = humanize.precisedelta(timedelta(seconds=self.duration))
+        self.hduration = humanize.precisedelta(
+            timedelta(seconds=self.duration)
+        )
         self.valid_trial_mean_time = humanize.precisedelta(
             timedelta(
                 seconds=(
-                    (self.duration / self.combination_count) if self.combination_count > 0 else 0
+                    (self.duration / self.combination_count)
+                    if self.combination_count > 0
+                    else 0
                 )
             )
         )
@@ -322,7 +377,7 @@ class OptunaFeatureSelectionObjective:
         result = remaining_trials * (1.0 * duration / (1 + current_trial))
         return datetime.now() + timedelta(seconds=result)
 
-    def loss_improvement_percent(self, loss: float) -> float:
+    def relative_improvement_percent(self, loss: float) -> float:
         """Compares a loss against the baseline loss (with no features dropped).
 
         NEGATIVE values indicate an INCREASE in loss.
@@ -348,10 +403,13 @@ class OptunaFeatureSelectionObjective:
 
     def _compute_removed_features(self, trial) -> tuple[str]:
         feature_selection = [
-            trial.suggest_categorical(name, [True, False]) for name in self.features
+            trial.suggest_categorical(name, [True, False])
+            for name in self.features
         ]
         return tuple(
-            name for name, selected in zip(self.features, feature_selection) if not selected
+            name
+            for name, selected in zip(self.features, feature_selection)
+            if not selected
         )
 
     @property
@@ -359,8 +417,8 @@ class OptunaFeatureSelectionObjective:
         return len(self.known_losses)
 
     @cached_property
-    def removal_rank(self) -> tuple[float, tuple[str]]:
-        return tuple(
+    def removal_rank(self) -> pd.DataFrame:
+        result = (
             (
                 self.known_losses[k],
                 k,
@@ -370,11 +428,17 @@ class OptunaFeatureSelectionObjective:
                 key=self.known_losses.get,
             )
         )
+        df = pd.DataFrame(
+            result,
+            columns=["loss", "removed_features"],
+        )
+        df["RI%"] = df.loss.apply(self.relative_improvement_percent)
+        df["rcount"] = df["removed_features"].apply(len)
+        return df[["RI%", "loss", "rcount", "removed_features"]]
 
     @cached_property
     def removal_rank_by_removal_count(self) -> pd.DataFrame:
-        data = ((loss, removed_features) for loss, removed_features in self.removal_rank)
-        df = pd.DataFrame(data, columns=["loss", "removed_features"])
+        df = self.removal_rank
         df["rcount"] = df["removed_features"].apply(len)
 
         # Group by rcount and get the row with the minimum loss in each group
@@ -384,11 +448,20 @@ class OptunaFeatureSelectionObjective:
         grouped_df = grouped_df.merge(group_counts, on="rcount")
 
         sorted_df = grouped_df.sort_values(by="loss").reset_index(drop=True)
-        sorted_df["rank_by_loss"] = range(1, len(sorted_df) + 1)
+        sorted_df["improvement_rank"] = range(1, len(sorted_df) + 1)
 
         # Sort by rcount in reverse order
         sorted_df = sorted_df.sort_values(by="rcount", ascending=False)
-        return sorted_df.drop("rcount", axis=1)
+        sorted_df = sorted_df.set_index("rcount")
+        return sorted_df[
+            [
+                "element_count",
+                "improvement_rank",
+                "RI%",
+                "loss",
+                "removed_features",
+            ]
+        ]
 
     def study_progress(self, current_trial):
         show_best = (
@@ -397,15 +470,24 @@ class OptunaFeatureSelectionObjective:
         )
         show_last = (
             self.best_improvement_trial is None
-            or self.best_improvement_trial.trial != self.last_improvement_trial.trial
+            or self.best_improvement_trial.trial
+            != self.last_improvement_trial.trial
         ) and current_trial.trial != self.last_improvement_trial.trial
-        show_best_str = f"\n     Best: {self.best_improvement_trial}" if show_best else ""
-        show_best_removal_str = (
-            f"\n     Best: {self.best_improvement_trial.removed_features}" if show_best else ""
+        show_best_str = (
+            f"\n     Best: {self.best_improvement_trial}" if show_best else ""
         )
-        show_last_str = f"\n    Last+: {self.last_improvement_trial}" if show_last else ""
+        show_best_removal_str = (
+            f"\n     Best: {self.best_improvement_trial.removed_features}"
+            if show_best
+            else ""
+        )
+        show_last_str = (
+            f"\n    Last+: {self.last_improvement_trial}" if show_last else ""
+        )
         show_last_removal_str = (
-            f"\n    Last+: {self.last_improvement_trial.removed_features}" if show_last else ""
+            f"\n    Last+: {self.last_improvement_trial.removed_features}"
+            if show_last
+            else ""
         )
         logger.info(
             f"## [ETA {self.eta(current_trial.trial)}] Valid trials: "
@@ -433,17 +515,35 @@ class OptunaFeatureSelectionObjective:
             f"\nImprovement:"
             f"\n  Best: {self.best_improvement_trial}"
             f"\n  Last: {self.last_improvement_trial}"
-            f"\n\n---\nRemoval count ranking (showing best entry for each removal count)"
-            f"\n  - Best is always at 'loss-rank'=1"
-            f"\n\nremoved-count, loss-rank, element-count, relative-loss-%, loss, removed\n"
         )
+
+        report += (
+            "\n\n---\nRemoval count ranking (showing best entry for each removal count)"
+            "\n  - Best is always at 'improvement-rank'=1"
+            "\n\nremoved-count, improvement-rank, element-count, relative-improvement-%, loss, removed\n"
+        )
+        report += self.print_removal_count_ranking_rows()
+        return report
+
+    def print_removal_count_ranking_rows(self) -> str:
+        result = ""
         for _, row in self.removal_rank_by_removal_count.iterrows():
-            report += (
+            result += (
                 f"{len(row.removed_features):02n}, "
-                f"{row.rank_by_loss:02n}, "
+                f"{row.improvement_rank:02n}, "
                 f"{row.element_count:03n}, "
-                f"{self.loss_improvement_percent(row.loss): 08.5f}, "
+                f"{row['RI%']: 09.5f}, "
                 f"{row.loss:18.14f}, "
                 f"{row.removed_features}\n"
             )
-        return report
+        return result
+
+    def write_relative_loss_ranking_rows(self, df: pd.DataFrame, fp):
+        if df is None:
+            df = self.removal_rank
+
+        for _, row in df.iterrows():
+            fp.write(f"{row['RI%']: 09.5f}, " f"{row.loss:18.14f}, ")
+            if "rcount" in df.columns:
+                fp.write(f"{row.rcount:02n}, ")
+            fp.write(f"{row.removed_features}\n")
