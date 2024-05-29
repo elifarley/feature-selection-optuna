@@ -49,6 +49,6 @@ feature_removal_cv(
     },
     X=df.drop(columns=["MedHouseVal"]),
     y=df.MedHouseVal,
-    split_count=5,
+    split_count=3,
     trial_count=1000,
 )

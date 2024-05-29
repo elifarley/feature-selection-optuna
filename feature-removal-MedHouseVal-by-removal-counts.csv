@@ -1,7 +1,7 @@
 rcount,element_count,improvement_rank,RI%,loss,removed_features
-5,16,6,-4.662296603338922,0.47045773007000646,"('HouseAge', 'AveRooms', 'AveBedrms', 'Population', 'AveOccup')"
-4,30,5,-4.212478400039621,0.46843579420832376,"('HouseAge', 'AveBedrms', 'Population', 'AveOccup')"
-3,32,4,-1.0305354226978647,0.45413293903588486,"('HouseAge', 'AveBedrms', 'Population')"
-2,24,1,0.5640089195592668,0.44696545144866595,"('AveBedrms', 'Population')"
-1,8,2,0.1658950908460466,0.4487549757973981,"('Population',)"
-0,1,3,0.0,0.4495006753511254,()
+5,17,6,-3.9023575636234487,0.475224260180597,"('HouseAge', 'AveRooms', 'AveBedrms', 'Population', 'AveOccup')"
+4,27,5,-3.147746847668187,0.47177285322869417,"('HouseAge', 'AveRooms', 'AveBedrms', 'Population')"
+3,33,4,-0.6546169909855681,0.46036988009643715,"('HouseAge', 'AveBedrms', 'Population')"
+2,23,2,1.253389887624179,0.45164311798469603,"('AveBedrms', 'Population')"
+1,8,1,1.2666996248932194,0.45158224246468676,"('AveBedrms',)"
+0,1,3,0.0,0.45737582026432727,()
