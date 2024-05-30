@@ -9,13 +9,13 @@ from timeit import default_timer as timer
 from typing import TypeVar
 
 import humanize
+import json
 import optuna
 from optuna.samplers import TPESampler
 import pandas as pd
-from pickle_blosc import pickle, unpickle
 from trainkit import compute_loss
 from trainkit import get_splits
-from trainkit import train_valid_splits_by_counts
+from trainkit import split_by_counts
 
 from sklearn.metrics import root_mean_squared_error
 
@@ -23,6 +23,7 @@ from sklearn.metrics import root_mean_squared_error
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 logging.getLogger("trainkit").setLevel(logging.INFO)
 logger = logging.getLogger("feature_selection")
+logger.setLevel(logging.INFO)
 
 
 def feature_removal(
@@ -31,18 +32,25 @@ def feature_removal(
     X_valid: pd.DataFrame,
     y_train: pd.Series,
     y_valid: pd.Series,
+    test: tuple[pd.DataFrame, pd.Series] = tuple(),
     data_dir: str = os.getcwd(),
     trial_count: int = 100,
     max_removal_count: int = 5,
     always_keep: set[str] = {},
     removal_suggestions: list[tuple[str]] = [],
 ):
+    test_count = test[0].shape[0] if test else 0
+    X = pd.concat([X_train, X_valid], axis=0)
+    y = pd.concat([y_train, y_valid], axis=0)
+    if test_count:
+        X = pd.concat([X, test[0]], axis=0)
+        y = pd.concat([y, test[1]], axis=0)
     return feature_removal_cv(
         model_params,
-        pd.concat([X_train, X_valid], axis=0),
-        pd.concat([y_train, y_valid], axis=0),
-        split_count=train_valid_splits_by_counts(
-            X_train.shape[0], X_valid.shape[0]
+        X,
+        y,
+        split_count=split_by_counts(
+            X_train.shape[0], X_valid.shape[0], test_count
         ),
         data_dir=data_dir,
         trial_count=trial_count,
@@ -63,7 +71,7 @@ def feature_removal_cv(
     always_keep: set[str] = {},
     removal_suggestions: list[tuple[str]] = [],
 ):
-    loss_state_path = f"{data_dir}/feature-removal-{y.name}-state.blosc"
+    loss_state_path = f"{data_dir}/feature-removal-{y.name}-state.json"
 
     featurelist_path = f"{data_dir}/feature-removal-{y.name}-report.txt"
     if os.path.exists(featurelist_path):
@@ -118,16 +126,22 @@ def feature_removal_cv(
         always_keep=always_keep,
     ) as objective:
         if os.path.exists(loss_state_path):
-            objective.known_losses = unpickle(loss_state_path)
+            with open(loss_state_path, "r") as fp:
+                objective.known_losses = {
+                    tuple(removed): loss for removed, loss in json.load(fp)
+                }
             logger.info(
-                "[feature_removal] Loaded losses from %s", loss_state_path
+                "[feature_removal] Loaded %d losses from %s",
+                len(objective.known_losses),
+                loss_state_path,
             )
         else:
             study.optimize(
                 objective,
                 n_trials=trial_count,
             )
-            pickle(objective.known_losses, loss_state_path)
+            with open(loss_state_path, "w") as fp:
+                json.dump(list(objective.known_losses.items()), fp)
 
         objective.removal_rank_by_removal_count.to_csv(
             f"{data_dir}/feature-removal-{y.name}-by-removal-counts.csv"
@@ -152,7 +166,7 @@ def feature_removal_cv(
             optuna_fp.write(
                 "\n\n---\nRelative improvement percent (RI%) ranking, from best to worst:"
                 "\n  - Relative to the baseline (no features removed)"
-                "\n\RI%, loss, removed-count, removed\n"
+                "\n\nRI%, loss, removed-count, removed\n"
             )
             objective.write_relative_loss_ranking_rows(df, optuna_fp)
         logger.warning(
@@ -291,7 +305,7 @@ class OptunaFeatureSelectionObjective:
 
     def _early_stop(self, removed_features: T) -> T:
         if len(removed_features) > self.max_removal_count:
-            logging.debug(
+            logger.debug(
                 "### TrialPruned: Removal count too high: %d",
                 len(removed_features),
             )
@@ -464,6 +478,8 @@ class OptunaFeatureSelectionObjective:
         ]
 
     def study_progress(self, current_trial):
+        if not current_trial:
+            clear_line(9)
         show_best = (
             self.best_improvement_trial is not None
             and self.best_improvement_trial.trial != current_trial.trial
@@ -474,23 +490,28 @@ class OptunaFeatureSelectionObjective:
             != self.last_improvement_trial.trial
         ) and current_trial.trial != self.last_improvement_trial.trial
         show_best_str = (
-            f"\n     Best: {self.best_improvement_trial}" if show_best else ""
+            f"\n     Best: {self.best_improvement_trial}"
+            if show_best
+            else "\n     Best:"
         )
         show_best_removal_str = (
             f"\n     Best: {self.best_improvement_trial.removed_features}"
-            if show_best
-            else ""
+            if show_best or True
+            else "\n     Best:"
         )
         show_last_str = (
-            f"\n    Last+: {self.last_improvement_trial}" if show_last else ""
+            f"\n    Last+: {self.last_improvement_trial}"
+            if show_last
+            else "\n    Last+:"
         )
         show_last_removal_str = (
             f"\n    Last+: {self.last_improvement_trial.removed_features}"
             if show_last
-            else ""
+            else "\n    Last+:"
         )
-        logger.info(
-            f"## [ETA {self.eta(current_trial.trial)}] Valid trials: "
+        show_last_removal_str = ""
+        logger.info(  # TODO print
+            f"\n## [ETA {self.eta(current_trial.trial)}] Valid trials: "
             f"{100 * self.combination_count / (1 + current_trial.trial):02.2f}% "
             f"({self.combination_count})"
             f"\n   Trials:"
@@ -498,13 +519,13 @@ class OptunaFeatureSelectionObjective:
             f"\n     Cur.: {current_trial}"
             f"\n   Removals:"
             f"{show_best_removal_str}{show_last_removal_str}"
-            f"\n     Cur.: {current_trial.removed_features}"
+            # f"\n     Cur.: {current_trial.removed_features}"
         )
 
     def study_report(self):
         self._update_stats()
         report = (
-            f"\nTarget     : {self.y.name}; Rows: {self.y.shape[0]}"
+            f"\nTarget     : {self.y.name}; Rows: {self.y.shape[0]}; Test data: {len(self.splits[0]) > 2}"
             f"\nTime       : {self.hduration}"
             f"\nMax removal: {self.max_removal_count}"
             f"\nTrials     : {self.trial_count}"
@@ -547,3 +568,11 @@ class OptunaFeatureSelectionObjective:
             if "rcount" in df.columns:
                 fp.write(f"{row.rcount:02n}, ")
             fp.write(f"{row.removed_features}\n")
+
+
+def clear_line(n=1):
+    LINE_UP = "\033[1A"
+    LINE_CLEAR = "\x1b[2K"
+    return  # TODO
+    for i in range(n):
+        print(LINE_UP, end=LINE_CLEAR)

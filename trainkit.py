@@ -13,7 +13,7 @@ from sklearn.model_selection import KFold
 logger = logging.getLogger("trainkit")
 
 
-def train_valid_splits_by_counts(train_count, valid_count):
+def split_by_counts(train_count: int, valid_count: int, test_count: int = 0):
     """Generate indices for training and validation sets based on specified counts.
 
     This function creates a list of tuples, where each tuple contains
@@ -33,12 +33,18 @@ def train_valid_splits_by_counts(train_count, valid_count):
         A list containing one tuple of two numpy arrays, where the first array
         is the training indices and the second array is the validation indices.
     """
-    return [
-        (
-            np.arange(train_count),
-            np.arange(train_count, train_count + valid_count),
+    result = (
+        np.arange(train_count),
+        np.arange(train_count, train_count + valid_count),
+    )
+    if test_count:
+        result += (
+            np.arange(
+                train_count + valid_count,
+                train_count + valid_count + test_count,
+            ),
         )
-    ]
+    return [result]
 
 
 def get_splits(X, split_count=2):
@@ -69,7 +75,7 @@ def compute_loss(
     X: pd.DataFrame,
     y: pd.Series,
     splits: list[tuple],
-    selected_feature_names: list[str] = [],
+    selected_feature_names: list[str] | None = None,
     loss_fn: Callable[[pd.Series, pd.Series], float] = root_mean_squared_error,
 ) -> float:
     """Compute the loss for a given model configuration and dataset.
@@ -102,8 +108,9 @@ def compute_loss(
     if not selected_feature_names:
         selected_feature_names = list(X.columns)
 
-    for train_idx, valid_idx in splits:
+    for split_item in splits:
         iteration += 1
+        train_idx, valid_idx = (split_item[0], split_item[1])
         X_train_split = X.iloc[train_idx][selected_feature_names]
         y_train_split = y.iloc[train_idx]
         X_valid_split = X.iloc[valid_idx][selected_feature_names]
@@ -121,8 +128,16 @@ def compute_loss(
                 valid_sets=[valid_data],
             )
 
-        pred = gbm.predict(X_valid_split, num_iteration=gbm.best_iteration)
-        iter_loss = loss_fn(y_valid_split, pred)
+        if len(split_item) == 3:
+            X_test_split = X.iloc[split_item[2]][selected_feature_names]
+            y_test_split = y.iloc[split_item[2]]
+        else:
+            X_test_split = X_valid_split
+            y_test_split = y_valid_split
+
+        pred = gbm.predict(X_test_split, num_iteration=gbm.best_iteration)
+        iter_loss = loss_fn(y_test_split, pred)
+
         loss += iter_loss
         if iteration > 1:
             logger.debug(
