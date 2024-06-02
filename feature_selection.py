@@ -62,7 +62,7 @@ def feature_removal_cv(
     data_dir: str = os.getcwd(),
     trial_count: int = 100,
     max_removal_count: int = 5,
-    always_keep: set[str] = {},
+    always_keep: set[str] = set(),
     removal_suggestions: list[tuple[str]] = [],
     try_all_double_suggestions: bool = False,
 ):
@@ -297,6 +297,7 @@ class OptunaFeatureSelectionObjective:
             f"[OptunaFeatureSelectionObjective] Target: {self.y.name}; "
             f"Size: {self.y.shape[0]}"
             f"\n  {len(list(self.X))} features: {self.features}"
+            f"\n  {len(self.always_keep)} Always keep: {tuple(self.always_keep)}"
         )
         self.start_time = timer()
         return self
@@ -319,6 +320,7 @@ class OptunaFeatureSelectionObjective:
             logger.debug("### TrialPruned: No features left.")
             raise optuna.exceptions.TrialPruned()
 
+        # Keep at least one item of always_keep:
         if self.always_keep and len(
             set(removed_features) & self.always_keep
         ) == len(self.always_keep):
@@ -639,6 +641,7 @@ class OptunaFeatureSelectionObjective:
             "target": self.y.name,
             "size": self.y.shape[0],
             "features": self.features,
+            "always_keep": self.always_keep,
             "max_removal_count": self.max_removal_count,
             "trial_count": self.trial_count,
             "optuna_repeated_count": self.optuna_repeated_count,
@@ -664,6 +667,7 @@ class OptunaFeatureSelectionObjective:
         )
 
         result.features = json_dict.get("features", [])
+        result.always_keep = set(json_dict.get("always_keep", []))
         result.max_removal_count = json_dict.get("max_removal_count", 0)
         result.trial_count = json_dict.get("trial_count", 1)
         result.optuna_repeated_count = json_dict.get(
