@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import logging
+import optuna
 
 from feature_selection import feature_removal_cv
 
@@ -12,6 +13,8 @@ logging.basicConfig(
     format="[%(asctime)s] %(levelname)s: %(message)s",
     datefmt="%d-%b-%y %H:%M:%S",
 )
+optuna.logging.set_verbosity(optuna.logging.WARNING)
+
 logger = logging.getLogger("feature_selection_example")
 
 df = fetch_california_housing(as_frame=True).frame
