@@ -2,11 +2,9 @@
 
 Feature selection is a critical step in machine learning to enhance model performance and reduce overfitting. However, evaluating every possible combination of features can be computationally expensive.
 
-This example introduces an efficient approach to feature selection using Optuna, which significantly reduces the search space and computation time.
+This library introduces an efficient approach to feature selection using Optuna, which significantly reduces the search space and computation time.
 
 ## Details
-
-In this project, you can see how to use Optuna for feature selection.
 
 The class `OptunaFeatureSelectionObjective` conducts a study where each trial
 attempts a different subset of features from the input dataset.
