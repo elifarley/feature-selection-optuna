@@ -15,23 +15,18 @@ Key highlights:
 
 ### Pruning Strategy
 
-Trials are pruned using optuna.exceptions.TrialPruned in three scenarios:
+Trials are pruned using `optuna.exceptions.TrialPruned` in three scenarios:
 
-1. The number of features exceeds a user-defined maximum.
-2. No features are selected for the trial.
-3. The feature set has been previously evaluated in another trial.
+1. The set of removed features has been evaluated in a prevous trial.
+2. The number of removed features exceeds a user-defined maximum.
+3. No features are selected for the trial.
 
 ### ETA Prediction
 
-After each successful trial, an estimated time of arrival (ETA) is printed, providing users with a prediction of when the study is likely to complete. This feature is particularly useful for long-running studies, allowing users to manage their time efficiently.
+After each successful trial, an ETA is printed, letting users know when the study is likely to complete.
+This feature is particularly useful for long-running studies, allowing users to manage their time more efficiently.
 
-### Benefits
-
-Efficiency: By pruning trials that exceed the feature limit, have no selected features, or repeat previous trials, we save significant computation time.
-
-User Experience: The ETA prediction enhances the user experience by setting expectations for study completion, enabling better planning and time management.
-
-### Example Usage
+## Example Usage
 
 ```Python
 from feature_selection import feature_removal_cv
@@ -62,7 +57,7 @@ feature_removal_cv(
 
 ```
 
-### Example Report
+## Example Report
 
 Example feature removal report from the `fetch_california_housing` dataset,
 using *LightGBM* as the model:
